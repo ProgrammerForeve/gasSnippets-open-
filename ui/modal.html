@@ -2,84 +2,92 @@
 <html>
   <head>
     <base target="_top">
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
   </head>
-  <body>
-    <div class="loader">
-      <span></span>
-      <span></span>
-      <span></span>
-      <span></span>
+  <body>      
+    <div class="container">
+        <div class="row md-2">
+            <div class="col-4">
+                <input type="checkbox" class="form-check-input" id="error-only-check">
+                <label class="form-check-label" for="error-only-check">Только с ошибками</label>
+            </div>
+            <div class="col-8">
+                <label class="form-check-label" for="progress">Прогресс: </label>
+                <progress id="progress" value="0" max="100">0 %</progress>
+            </div>
+        </div>
+        <div class="row md-4">
+            <div class="col">
+                <label class="form-text-label">Запущено процессов: </label>
+                <label class="form-text-label" id="threads-count">?</label>                
+            </div>
+        </div>
+        <div class="form-group container" id="results-body">
+        <div class="row">
+            <div class="col-8">
+                <label>Параметры</label>
+            </div>
+            <div class="col-4">
+                <label>Результат</label>
+            </div>
+        </div>
+        </div>
     </div>
-    <textarea id="log"></textarea>
 
-    <style>
-      #_log {
-        width: 285px;
-        height: 290px;
-      }
-      *{box-sizing:border-box}
-      body {
-        margin: 0;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        height: 100vh;
-      }
-      @keyframes loader {
-        0% {transform:rotate(-45deg)}
-        50%{transform:rotate(-135deg)}
-        100%{transform:rotate(-225deg)}}
-      @keyframes span-1 {
-        0% {transform:translate(0);}
-        50%{transform:translate(-50px, 0);border-color:#EE4D68}
-        100%{transform:translate(0);}}
-      @keyframes span-2 {
-        0%{transform:translate(0);}
-        50%{transform:translate(50px, 0);border-color:#875678}
-        100%{transform:translate(0);}}
-      @keyframes span-3 {
-        0%{transform:translate(0);}
-        50%{transform:translate(0, -50px);border-color:#FF9900}
-        100%{transform:translate(0);}}
-      @keyframes span-4 {
-        0%{transform:translate(0);}
-        50%{transform:translate(0, 50px);border-color:#00E4F6}
-        100%{transform:translate(0);}}
-      .loader {
-        width: 50px;
-        height: 50px;
-        position: relative;
-        animation: loader 2s infinite ease-in-out;
-      }
-      .loader span {
-        width: 50px;
-        height: 50px;
-        position: absolute;
-        left: 0;
-        top: 0;
-        border: 4px solid #0B1B48;
-      }
-      .loader span:nth-child(1) {
-        animation: span-1 2s ease-in-out infinite;
-      }
-      .loader span:nth-child(2) {
-        animation: span-2 2s ease-in-out infinite;
-      }
-      .loader span:nth-child(3) {
-        animation: span-3 2s ease-in-out infinite;
-      }
-      .loader span:nth-child(4) {
-        animation: span-4 2s ease-in-out infinite;
-      }
+    <style>      
     </style>
     <script>
-     const logger = (data)=>{
+        class Semaphore {
+          constructor(max = 1) {
+              if (max < 1) {
+                  max = 1;
+              }
+              this.max = max;
+              this.count = 0;
+              this.queue = [];
+          }
+          acquire() {
+              let promise;
+              if (this.count < this.max) {
+                  promise = Promise.resolve();
+              } else {
+                  promise = new Promise(resolve => {
+                      this.queue.push(resolve);
+                  });
+              }
+              this.count++;
+              return promise;
+          }
+          release() {
+              if (this.queue.length > 0) {
+                  const resolve = this.queue.shift();
+                  resolve();
+              }
+              this.count--;
+          }
+      };
+
+     const logger = (data, isAppend=false)=>{
         let logElem = document.querySelector("#log");
         if(logElem){
           let logText = logElem.value;
-          logElem.value = `${logText}\n${JSON.stringify(data, null, "")}`;
+          logElem.value = `${isAppend?logText:""}\n${data}`;
         };
       };
+
+      const progress = (value, max, text)=>{
+        let progressElem = document.querySelector("#progress");
+        progressElem.value = value;
+        progressElem.max = max;
+        progressElem.labels[0].textContent = `Progress: ${text} `;
+      };
+
+      const threadsCountDraw = (value, max)=>{
+        let threadsCountElem = document.querySelector("#threads-count");
+        threadsCountElem.textContent = `${value} / ${max}`;
+      };
+
+      
 
       async function run(serverSideFunctionName, ...params){
         return new Promise((resolve, reject)=>{
@@ -89,34 +97,109 @@
           [serverSideFunctionName](...params);
         });
       };
-
-      (async ()=>{
-        const getAllParamsFuncName = <?= getAllParamsFuncName ?>;
-        const workerFuncName = <?= workerFuncName ?>;
-        const callbackFuncName = <?= callbackFuncName ?>;
-        const allParamsFuncParams = [<?= allParamsFuncParams ?>];
-
-        let allParams = await run(getAllParamsFuncName, ...allParamsFuncParams);
-
-        let threadsCount = +<?= threadsCount ?>; // simultaneously running scripts
-        let outData = [];
-        for (let block=0; block*threadsCount<allParams.length; block++){          
-          let allParamsShort = allParams.slice(block*threadsCount, (block+1)*threadsCount);
-          
-          logger(`block #${block}, ${block*threadsCount}/${allParams.length}`);
-          if (allParamsShort){            
-            let promises = allParamsShort.map(params=>run(workerFuncName, ...params));
-            let data = await Promise.allSettled(promises); // Promise.all
-            outData = outData.concat(data);
-          };          
+    
+      // Function to update the table with results
+      function updateTable(params, result, error = false) {
+        var resultsBody = document.getElementById("results-body");
+        var tableRow = document.createElement("div");
+        tableRow.classList.add("row");        
+        
+        const checkbox = document.querySelector('#error-only-check');
+        const showErrorOnly = checkbox.checked;
+        if(showErrorOnly && !error){
+          tableRow.style.display = 'none';
+        }else{
+          tableRow.style.display = '';
         };
-                
-        if (callbackFuncName){
-          run(callbackFuncName, outData);
-        };
+        
 
-        google.script.host.close();
-      })();
+        //Params cell
+        var paramsCell = document.createElement("div");
+        paramsCell.classList.add("col-8");
+        var paramsLabel = document.createElement("label");
+        paramsLabel.classList.add("form-control");
+        if (error) {
+          paramsLabel.classList.add("text-danger");
+        }
+        paramsLabel.innerHTML = params;
+        paramsCell.appendChild(paramsLabel);
+
+        tableRow.appendChild(paramsCell);
+
+        // result cell
+        var resultCell = document.createElement("div");
+        resultCell.classList.add("col-4");
+        var resultLabel = document.createElement("label");
+        resultLabel.classList.add("form-control");        
+        if (error) {
+          resultLabel.classList.add("text-danger");
+        }
+        resultLabel.innerHTML = result;
+        resultCell.appendChild(resultLabel);
+
+        tableRow.appendChild(resultCell);
+
+        resultsBody.appendChild(tableRow);
+        resultsBody.appendChild(tableRow);
+      }
+
+      const checkbox = document.querySelector('#error-only-check');
+      checkbox.addEventListener('change', (event) => {
+        const showErrorOnly = event.target.checked;
+        const rows = document.querySelectorAll('#results-body .row:not(:first-child)');
+        rows.forEach((row) => {
+          const firstLabel = row.querySelector('label');
+          if (showErrorOnly && !firstLabel.classList.contains('text-danger')) {
+            row.style.display = 'none';
+          } else {
+            row.style.display = '';
+          };
+        });
+      });
+
+    async function doIt(serverSideFunctionName, params, semaphore) {
+        const resp = await run(serverSideFunctionName, ...params);
+        semaphore.release();
+        return resp;
+    }
+
+      const getAllParamsFuncName = <?= getAllParamsFuncName ?>;
+      const workerFuncName = <?= workerFuncName ?>;
+      const callbackFuncName = <?= callbackFuncName ?>;
+      const allParamsFuncParams = [<?= allParamsFuncParams ?>];
+      const threadsCount = +<?= threadsCount ?>; // simultaneously running scripts
+
+    (async ()=>{
+      let allParams = await run(getAllParamsFuncName, ...allParamsFuncParams);
+
+      const semaphore = new Semaphore(threadsCount);
+      let totalCount = allParams.length;
+      let completedCount = 0;
+      for (const params of allParams) {
+        await semaphore.acquire();
+        
+        doIt(workerFuncName, params, semaphore)
+        .then(
+          data=>{
+            updateTable(data.params || params, data.result || "OK", data.result!=="OK");
+            threadsCountDraw(semaphore.count, threadsCount);
+          }, // OK
+          error=>{
+            updateTable(params, error, true)   // Error
+            threadsCountDraw(semaphore.count, threadsCount);
+          }
+        );
+        
+        completedCount++;
+        progress(completedCount, totalCount, `${completedCount}/${totalCount}`);
+      };
+              
+      if (callbackFuncName){
+        run(callbackFuncName, []);
+      };
+
+      // google.script.host.close();
+    })();
     </script>
   </body>
 </html>
